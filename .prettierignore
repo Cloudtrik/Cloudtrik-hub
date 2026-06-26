@@ -1,0 +1,23 @@
+# Built artifacts and dependencies
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Generated lockfiles
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Workflow files use compact YAML inline-map style intentionally; preserve as-authored.
+.github/workflows/*.yml
+.github/dependabot.yml
+.github/pull_request_template.md
+
+# Seed CHANGELOG keep verbatim (Keep a Changelog template; prettier markdown adds blank lines)
+CHANGELOG.md
+
+# Seed scaffolding markdown
+NOTICE
+LICENSE
+SMOKE-PLACEHOLDER.md
