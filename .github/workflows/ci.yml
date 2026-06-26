@@ -1,0 +1,63 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write   # for gitleaks PR comment
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # gitleaks needs full history
+      - uses: pnpm/action-setup@v4
+        with: { version: '9' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm build
+      - run: pnpm test -- --coverage
+      - name: Verify tarball contents
+        run: |
+          pnpm pack
+          PKG=$(ls cloudtrik-hub-*.tgz)
+          tar -tzf "$PKG" > /tmp/tar-contents.txt
+          # Whitelist check
+          while IFS= read -r line; do
+            case "$line" in
+              package/bin/*|package/dist/*|package/README.md|package/LICENSE|package/CHANGELOG.md|package/package.json|package/) ;;
+              *) echo "DISALLOWED in tarball: $line"; exit 1 ;;
+            esac
+          done < /tmp/tar-contents.txt
+          # Sensitive content denylist
+          if tar -tzf "$PKG" | grep -E '\.planning|\.env|\.local|10\.8\.96\.|agent-[0-9]+\.cloudtrik\.com'; then
+            echo "Sensitive content in tarball"; exit 1
+          fi
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}   # optional pro license
+
+  trufflehog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: trufflesecurity/trufflehog@c1a1d6a28a601e902d8652e75425c4b3d3294053   # main as of 2026-06-26
+        with:
+          path: ./
+          extra_args: --only-verified

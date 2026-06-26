@@ -71,6 +71,7 @@ paths = [
   '''CHANGELOG\.md''',
   '''\.npmignore''',
   '''\.gitleaks\.toml''',
+  '''\.github/workflows/.*\.ya?ml''',
 ]
 # These regexes match docs that legitimately describe the pattern (but never the secret itself)
 regexes = [
