@@ -1,0 +1,7 @@
+cloudtrik-hub
+Copyright (c) 2026 Cloudtrik
+
+This software draws architectural inspiration from clawhub
+(https://github.com/openclaw/clawhub), copyright (c) 2026 Peter Steinberger,
+MIT-licensed. The implementation here is an original clean reimplementation;
+no source code was copied verbatim.
