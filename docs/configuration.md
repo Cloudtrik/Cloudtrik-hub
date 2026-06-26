@@ -1,0 +1,3 @@
+# cloudtrik-hub configuration
+
+Environment variables: CLOUDTRIK_HUB_SITE, CLOUDTRIK_HUB_REGISTRY, CLOUDTRIK_HUB_WORKDIR, CLOUDTRIK_HUB_CONFIG_PATH, CLOUDTRIK_HUB_DISABLE_TELEMETRY, CLOUDTRIK_HUB_SCANNER_BIN. Full reference lands with W3 implementation.

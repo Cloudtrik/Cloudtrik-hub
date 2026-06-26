@@ -1,0 +1,50 @@
+{
+  "name": "cloudtrik-hub",
+  "version": "0.1.0",
+  "description": "Cloudtrik-Hub CLI — search, install, update, publish agent skills from the Cloudtrik registry.",
+  "license": "MIT",
+  "author": "Cloudtrik",
+  "homepage": "https://github.com/Cloudtrik/Cloudtrik-hub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cloudtrik/Cloudtrik-hub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Cloudtrik/Cloudtrik-hub/issues"
+  },
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "cloudtrik-hub": "bin/cloudtrik-hub.js" },
+  "files": ["bin", "dist", "README.md", "LICENSE", "CHANGELOG.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src tests",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build && pnpm test && pnpm lint && pnpm typecheck"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.5.1",
+    "arktype": "^2.2.0",
+    "commander": "^14.0.3",
+    "fflate": "^0.8.3",
+    "ignore": "^7.0.5",
+    "json5": "^2.2.3",
+    "mime": "^4.1.0",
+    "ora": "^9.3.0",
+    "p-retry": "^7.1.1",
+    "semver": "^7.7.4",
+    "undici": "^7.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.0.0"
+  }
+}

@@ -1,0 +1,78 @@
+title = "cloudtrik-hub gitleaks config"
+
+[extend]
+useDefault = false   # we curate our own; the default set is OK BUT can produce noise on README docs blocks
+
+[[rules]]
+description = "Internal CIDR leak (internal VPS topology)"
+id = "internal-cidr"
+regex = '''10\.8\.96\.\d{1,3}'''
+tags = ["internal", "topology"]
+
+[[rules]]
+description = "Internal agent-N hostname"
+id = "internal-agent-hostname"
+regex = '''agent-\d+\.cloudtrik\.com'''
+tags = ["internal", "hostname"]
+
+[[rules]]
+description = "Internal HMAC secret env var name"
+id = "internal-hmac-secret"
+regex = '''INTERNAL_HMAC_SECRET'''
+tags = ["secret-name"]
+
+[[rules]]
+description = "OpenRouter API key"
+id = "openrouter-key"
+regex = '''sk-or-v\d-[a-z0-9]{32,}'''
+tags = ["api-key"]
+
+[[rules]]
+description = "Vultr API key (Bearer-style or env-var name)"
+id = "vultr-key"
+regex = '''(VULTR_API_KEY|vultr_[a-z0-9]{32,})'''
+tags = ["api-key"]
+
+[[rules]]
+description = "WHMCS API role / API identifier / secret env-var names"
+id = "whmcs-api-env"
+regex = '''WHMCS_API_(IDENTIFIER|SECRET|ROLE)'''
+tags = ["secret-name"]
+
+[[rules]]
+description = "ModulesGarden license / API key env-var names"
+id = "mg-api"
+regex = '''MG_(LICENSE|API|VULTR|VPS)_(KEY|SECRET|TOKEN)'''
+tags = ["secret-name"]
+
+[[rules]]
+description = "internal planning path marker"
+id = "planning-path"
+regex = '''\.planning/'''
+tags = ["internal-path"]
+
+[[rules]]
+description = "Cloudflare zone or account id"
+id = "cf-zone-acct"
+regex = '''(CLOUDFLARE|CF_)(ZONE|ACCOUNT|API)_(ID|TOKEN|KEY)'''
+tags = ["api-key"]
+
+[[rules]]
+description = "Generic high-entropy AWS-style access key"
+id = "aws-access-key"
+regex = '''AKIA[A-Z0-9]{16}'''
+tags = ["api-key"]
+
+[allowlist]
+description = "Allow doc-pattern mentions in source comments + denylist SECURITY-CONTROL files (which contain the blocked patterns AS denylist data, not as leaks)"
+paths = [
+  '''README\.md''',
+  '''docs/.*\.md''',
+  '''CHANGELOG\.md''',
+  '''\.npmignore''',
+  '''\.gitleaks\.toml''',
+]
+# These regexes match docs that legitimately describe the pattern (but never the secret itself)
+regexes = [
+  '''CLOUDTRIK_HUB_(REGISTRY|SITE|WORKDIR|CONFIG_PATH|DISABLE_TELEMETRY)''',
+]
