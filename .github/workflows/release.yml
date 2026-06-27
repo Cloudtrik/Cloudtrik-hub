@@ -32,7 +32,14 @@ jobs:
           if [ "$PKG_VER" != "$TAG_VER" ]; then
             echo "Mismatch: package=$PKG_VER tag=$TAG_VER"; exit 1
           fi
-      - run: npm publish --provenance --access public
+      - name: Upgrade npm to ≥11.5.1 (Trusted Publisher OIDC support)
+        run: npm install -g npm@latest
+      - name: Publish to npm via OIDC Trusted Publisher
+        # No NODE_AUTH_TOKEN — npm CLI uses OIDC token exchange when:
+        # (a) id-token: write permission is granted (above)
+        # (b) Trusted Publisher is configured server-side on the package
+        # (c) no _authToken in ~/.npmrc (we intentionally do not set NPM_TOKEN env)
+        run: npm publish --provenance --access public
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
