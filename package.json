@@ -13,10 +13,22 @@
     "url": "https://github.com/Cloudtrik/Cloudtrik-hub/issues"
   },
   "type": "module",
-  "engines": { "node": ">=20" },
-  "bin": { "cloudtrik-hub": "bin/cloudtrik-hub.js" },
-  "files": ["bin", "dist", "README.md", "LICENSE", "CHANGELOG.md"],
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "cloudtrik-hub": "bin/cloudtrik-hub.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
@@ -42,9 +54,13 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/semver": "^7.7.1",
+    "@typescript-eslint/parser": "^8.62.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.62.0",
     "vitest": "^2.0.0"
   }
 }
