@@ -17,7 +17,7 @@ import { writeConfig } from './config.js';
 import { CliError } from '../util/errors.js';
 
 export interface BrowserLoginOpts {
-  /** Site URL for the browser flow start (e.g. https://cloudtrik.com). */
+  /** Site URL for the browser flow start (defaults to DEFAULT_SITE). */
   siteUrl: string;
   /** Override the bind port (otherwise random). Tests use a fixed port. */
   port?: number;
@@ -125,9 +125,7 @@ export async function loginViaBrowser(opts: BrowserLoginOpts): Promise<BrowserLo
  * unhandled rejections in test environments observing the server callback).
  */
 type HandleResult =
-  | { kind: 'noop' }
-  | { kind: 'token'; token: string }
-  | { kind: 'error'; error: CliError };
+  { kind: 'noop' } | { kind: 'token'; token: string } | { kind: 'error'; error: CliError };
 
 /**
  * Validate the inbound POST /token request:
