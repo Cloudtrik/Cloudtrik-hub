@@ -28,7 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registry now raises the "registry unavailable" error rather than silently falling back to a different
   origin. The built-in default still applies when no site was named.
 
-### Changed
+### Changed — please read, these are behaviour changes in a patch release
+- **An install with no scanner configured now FAILS instead of succeeding.** This is the point of the
+  release, and it is a behaviour change: environments that relied on the previous no-op-PASS default must
+  provide a scanner — as `cloudtrik-skill-scan` on `PATH`, via `CLOUDTRIK_HUB_SCANNER_BIN`, or by injecting
+  an adapter. The default out-of-the-box path (no site named) is unaffected.
+- **A site you name that advertises no registry now raises an error instead of falling back.** If you pass
+  `--site` or set `CLOUDTRIK_HUB_SITE` and that origin serves no `/.well-known/cloudtrik-hub.json`, the CLI
+  reports the registry as unreachable rather than silently using a different origin. When no site is named,
+  the built-in default still applies, so this cannot turn the default path into an outage.
 - Dependency lockfile refreshed within the existing semver ranges so the tested tree carries **zero** known
   advisories, production and development (`undici` moved to the patched `>=7.29.0` line; the test toolchain
   moved to `vitest` 3.x). No runtime dependency was added or removed.
