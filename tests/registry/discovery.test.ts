@@ -8,7 +8,10 @@ import {
 import { getTestMockAgent } from '../setup.js';
 
 describe('registry/discovery', () => {
-  const ORIGIN = 'https://cloudtrik.com';
+  // The built-in default site. Discovery misses on THIS origin fall back to
+  // DEFAULT_REGISTRY; misses on an operator-supplied origin fail closed.
+  const ORIGIN = DEFAULT_SITE;
+  const FOREIGN_SITE = 'https://not-a-registry.example';
 
   beforeEach(() => {
     delete process.env.CLOUDTRIK_HUB_REGISTRY;
@@ -52,13 +55,45 @@ describe('registry/discovery', () => {
     expect(result.source).toBe('cached');
   });
 
-  it('falls back to DEFAULT_REGISTRY when /.well-known 404 and no cache', async () => {
+  it('falls back to DEFAULT_REGISTRY when the DEFAULT site 404s and no cache', async () => {
     const agent = getTestMockAgent();
     const pool = agent.get(ORIGIN);
     pool.intercept({ path: '/.well-known/cloudtrik-hub.json', method: 'GET' }).reply(404, 'nope');
     const result = await resolveRegistry({ site: ORIGIN });
     expect(result.apiBase).toBe(DEFAULT_REGISTRY);
     expect(result.source).toBe('default');
+  });
+
+  it('FAILS CLOSED when an operator-supplied site advertises no registry', async () => {
+    const agent = getTestMockAgent();
+    const pool = agent.get(FOREIGN_SITE);
+    pool.intercept({ path: '/.well-known/cloudtrik-hub.json', method: 'GET' }).reply(404, 'nope');
+    await expect(resolveRegistry({ site: FOREIGN_SITE })).rejects.toThrow(/not yet reachable/);
+    // …and it names the site the caller actually asked for, not a substitute.
+    await expect(resolveRegistry({ site: FOREIGN_SITE })).rejects.toThrow(
+      /not-a-registry\.example/,
+    );
+  });
+
+  it('FAILS CLOSED for a CLOUDTRIK_HUB_SITE override with no registry', async () => {
+    process.env.CLOUDTRIK_HUB_SITE = FOREIGN_SITE;
+    const agent = getTestMockAgent();
+    const pool = agent.get(FOREIGN_SITE);
+    pool.intercept({ path: '/.well-known/cloudtrik-hub.json', method: 'GET' }).reply(404, 'nope');
+    await expect(resolveRegistry({})).rejects.toThrow(/not yet reachable/);
+    delete process.env.CLOUDTRIK_HUB_SITE;
+  });
+
+  it('an operator-supplied site still honours an explicit cachedRegistry', async () => {
+    const agent = getTestMockAgent();
+    const pool = agent.get(FOREIGN_SITE);
+    pool.intercept({ path: '/.well-known/cloudtrik-hub.json', method: 'GET' }).reply(404, 'nope');
+    const result = await resolveRegistry({
+      site: FOREIGN_SITE,
+      cachedRegistry: 'https://cached.example',
+    });
+    expect(result.apiBase).toBe('https://cached.example');
+    expect(result.source).toBe('cached');
   });
 
   it('treats malformed /.well-known JSON as miss', async () => {
@@ -71,8 +106,14 @@ describe('registry/discovery', () => {
     expect(result.source).toBe('default');
   });
 
-  it('exposes a default site constant', () => {
-    expect(DEFAULT_SITE).toBe('https://cloudtrik.com');
+  it('the default site and registry are the registry origin, not the marketing site', () => {
+    // Regression guard for the 0.1.0 defect: both constants pointed at an
+    // origin that serves no registry routes, so the CLI was broken out of the
+    // box in every context without an environment override.
+    expect(DEFAULT_SITE).toBe('https://hub.cloudtrik.com');
+    expect(DEFAULT_REGISTRY).toBe('https://hub.cloudtrik.com');
+    expect(DEFAULT_SITE).not.toBe('https://cloudtrik.com');
+    expect(DEFAULT_REGISTRY).not.toBe('https://cloudtrik.com');
   });
 
   it('registryUnavailableMessage references the site URL', () => {

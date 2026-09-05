@@ -3,7 +3,7 @@ import { buildProgram } from '../../src/cli.js';
 import { getTestMockAgent, makeTempDir, cleanupTempDir } from '../setup.js';
 import { writeConfig } from '../../src/auth/config.js';
 import { upsertLockEntry } from '../../src/workdir/lock.js';
-import { setScannerAdapter } from '../../src/scanner/shim.js';
+import { setScannerAdapter, type ScanReport } from '../../src/scanner/shim.js';
 import { packDirectory } from '../../src/util/tar.js';
 import { hashDirectory } from '../../src/util/hash.js';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -19,6 +19,18 @@ describe('commands/update', () => {
     workdir = await makeTempDir('update-workdir-');
     process.env.CLOUDTRIK_HUB_CONFIG_PATH = join(tempDir, 'config.json');
     await writeConfig({ token: 'tok' });
+    // Since 0.1.1 the scanner gate fails closed: an upgrade that downloads a
+    // new tarball must have a scanner to run against it.
+    setScannerAdapter({
+      scan: async (target: string): Promise<ScanReport> => ({
+        target,
+        findings: [],
+        criticalCount: 0,
+        ok: true,
+        durationMs: 1,
+        toolErrors: [],
+      }),
+    });
   });
 
   afterEach(async () => {

@@ -16,11 +16,25 @@
 import type { Command } from 'commander';
 import { storeToken } from '../auth/token.js';
 import { loginViaBrowser } from '../auth/browser.js';
+import { DEFAULT_SITE } from '../registry/discovery.js';
 import { CliError } from '../util/errors.js';
 import { info } from '../util/ui.js';
 
 interface GlobalOpts {
   site?: string;
+}
+
+/**
+ * Resolve the site URL used to start the browser login flow.
+ *
+ * Precedence: --site flag → CLOUDTRIK_HUB_SITE → DEFAULT_SITE.
+ *
+ * Exported so the default is directly assertable in a unit test. The 0.1.0
+ * defect survived review precisely because this default was only reachable
+ * through a five-minute interactive browser flow and so was never asserted.
+ */
+export function resolveLoginSite(site?: string): string {
+  return site ?? process.env.CLOUDTRIK_HUB_SITE ?? DEFAULT_SITE;
 }
 
 export function cmdLogin(program: Command): void {
@@ -40,7 +54,9 @@ export function cmdLogin(program: Command): void {
       if (opts.browser === false) {
         throw new CliError('--no-browser was set but no --token supplied; pass --token <value>', 4);
       }
-      const site = globalOpts.site ?? process.env.CLOUDTRIK_HUB_SITE ?? 'https://cloudtrik.com';
+      // Single source of truth: DEFAULT_SITE. A duplicated literal here is what
+      // left `login` pointed at the wrong origin while discovery was corrected.
+      const site = resolveLoginSite(globalOpts.site);
       info(`Starting browser login (site: ${site})…`);
       await loginViaBrowser({
         siteUrl: site,

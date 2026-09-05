@@ -128,7 +128,7 @@ function buildHeader(entry: TarEntry): Uint8Array {
   writeOctal(header, Math.floor(Date.now() / 1000), 136, 12); // mtime
   // checksum placeholder of spaces
   for (let i = 148; i < 156; i++) header[i] = 0x20;
-  header[156] = entry.type === 'dir' ? 0x35 /* '5' */ : 0x30 /* '0' */;
+  header[156] = entry.type === 'dir' ? 0x35 /* '5' */ : 0x30; /* '0' */
   writeString(header, enc.encode('ustar  '), 257);
   // compute checksum
   let sum = 0;

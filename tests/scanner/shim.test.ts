@@ -4,8 +4,31 @@ import {
   setScannerAdapter,
   getScannerAdapter,
   formatScannerRejection,
+  resolveScannerFromPath,
+  SCANNER_COMMAND,
   type ScanReport,
 } from '../../src/scanner/shim.js';
+import { makeTempDir, cleanupTempDir } from '../setup.js';
+import { writeFile, chmod } from 'node:fs/promises';
+import { join } from 'node:path';
+
+const notWindows = process.platform !== 'win32';
+
+/**
+ * Write an executable stub named `cloudtrik-skill-scan` into `dir` that emits
+ * the supplied ScanReport-shaped JSON on stdout.
+ *
+ * The shebang is an ABSOLUTE node path on purpose: these tests run with PATH
+ * emptied, so a `#!/bin/sh` stub calling `cat` would fail to resolve `cat` and
+ * fail closed — producing a green "rejects" assertion for entirely the wrong
+ * reason.
+ */
+async function writeScannerStub(dir: string, json: string): Promise<string> {
+  const stub = join(dir, SCANNER_COMMAND);
+  await writeFile(stub, `#!${process.execPath}\nconsole.log(${JSON.stringify(json)});\n`, 'utf8');
+  await chmod(stub, 0o755);
+  return stub;
+}
 
 describe('scanner/shim', () => {
   afterEach(() => {
@@ -13,12 +36,113 @@ describe('scanner/shim', () => {
     delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
   });
 
-  it('default adapter returns ok=true with empty findings', async () => {
-    const report = await scanPluginPackage('/tmp/x');
-    expect(report.ok).toBe(true);
-    expect(report.findings).toEqual([]);
-    expect(report.criticalCount).toBe(0);
-    expect(report.target).toBe('/tmp/x');
+  it('NEGATIVE CONTROL: fails closed with no adapter, no env var and no scanner on PATH', async () => {
+    // The whole point of 0.1.1. In 0.1.0 this exact state returned ok:true
+    // with zero findings — every skill declared safe WITHOUT BEING READ.
+    setScannerAdapter(null);
+    delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+    const emptyPathDir = await makeTempDir('scanner-empty-path-');
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = emptyPathDir;
+      expect(resolveScannerFromPath()).toBeNull();
+      const report = await scanPluginPackage('/tmp/x');
+      expect(report.ok).toBe(false);
+      expect(report.target).toBe('/tmp/x');
+      expect(report.toolErrors.length).toBeGreaterThan(0);
+      expect(report.toolErrors[0]?.error).toMatch(/NOT scanned/);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await cleanupTempDir(emptyPathDir);
+    }
+  });
+
+  it('NEGATIVE CONTROL: an unset PATH cannot yield a pass either', async () => {
+    setScannerAdapter(null);
+    delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+    const originalPath = process.env.PATH;
+    try {
+      delete process.env.PATH;
+      expect(resolveScannerFromPath()).toBeNull();
+      const report = await scanPluginPackage('/tmp/x');
+      expect(report.ok).toBe(false);
+    } finally {
+      if (originalPath !== undefined) process.env.PATH = originalPath;
+    }
+  });
+
+  it.skipIf(!notWindows)(
+    'POSITIVE CONTROL: uses a cloudtrik-skill-scan executable found on PATH',
+    async () => {
+      setScannerAdapter(null);
+      delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+      const binDir = await makeTempDir('scanner-path-');
+      const originalPath = process.env.PATH;
+      try {
+        await writeScannerStub(
+          binDir,
+          '{"findings":[],"criticalCount":0,"ok":true,"toolErrors":[]}',
+        );
+        process.env.PATH = binDir;
+        expect(resolveScannerFromPath()).toBe(join(binDir, SCANNER_COMMAND));
+        const report = await scanPluginPackage('/tmp/pkg');
+        expect(report.ok).toBe(true);
+        expect(report.target).toBe('/tmp/pkg');
+      } finally {
+        if (originalPath === undefined) delete process.env.PATH;
+        else process.env.PATH = originalPath;
+        await cleanupTempDir(binDir);
+      }
+    },
+  );
+
+  it.skipIf(!notWindows)('a PATH-discovered scanner can REJECT a package', async () => {
+    setScannerAdapter(null);
+    delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+    const binDir = await makeTempDir('scanner-path-reject-');
+    const originalPath = process.env.PATH;
+    try {
+      await writeScannerStub(
+        binDir,
+        '{"findings":[{"tool":"gitleaks","severity":"critical","rule":"key","message":"leak"}],"criticalCount":1,"ok":false,"toolErrors":[]}',
+      );
+      process.env.PATH = binDir;
+      const report = await scanPluginPackage('/tmp/pkg');
+      expect(report.ok).toBe(false);
+      expect(report.criticalCount).toBe(1);
+      // Distinguish a REAL scanner verdict from a fail-closed synthetic one:
+      // the synthetic report carries no findings and one toolError.
+      expect(report.findings.length).toBe(1);
+      expect(report.toolErrors.length).toBe(0);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await cleanupTempDir(binDir);
+    }
+  });
+
+  it.skipIf(!notWindows)('ignores relative and empty PATH entries', async () => {
+    // A '.' or '' PATH entry must never make the working directory a scanner
+    // source — that would be a trivially hijackable security control.
+    setScannerAdapter(null);
+    delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+    const cwdDir = await makeTempDir('scanner-cwd-');
+    const originalPath = process.env.PATH;
+    const originalCwd = process.cwd();
+    try {
+      await writeScannerStub(cwdDir, '{"findings":[],"criticalCount":0,"ok":true,"toolErrors":[]}');
+      process.chdir(cwdDir);
+      process.env.PATH = `:.:${'relative/dir'}`;
+      expect(resolveScannerFromPath()).toBeNull();
+      const report = await scanPluginPackage('/tmp/x');
+      expect(report.ok).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await cleanupTempDir(cwdDir);
+    }
   });
 
   it('honors injected adapter over default', async () => {
@@ -53,19 +177,32 @@ describe('scanner/shim', () => {
     expect(getScannerAdapter()).toBe(adapter);
   });
 
-  it('spawns external scanner binary when env var set + adapter unset', async () => {
-    // Use /bin/cat or a trivial echo binary that prints JSON to stdout.
-    // Most CI runners have node, so use node -e as a shim.
-    const NODE = process.execPath;
-    process.env.CLOUDTRIK_HUB_SCANNER_BIN = NODE;
-    // Note: we pass a script that ignores argv and prints a fixed report.
-    // Since CLOUDTRIK_HUB_SCANNER_BIN expects to receive target as argv[1],
-    // we craft a wrapper binary via a temp file in a richer test below.
-    // For this lightweight assertion, just verify the injected-adapter path
-    // remains the primary integration path.
+  it.skipIf(!notWindows)(
+    'spawns external scanner binary when env var set + adapter unset',
+    async () => {
+      const binDir = await makeTempDir('scanner-env-');
+      try {
+        const stub = await writeScannerStub(
+          binDir,
+          '{"findings":[],"criticalCount":0,"ok":true,"toolErrors":[]}',
+        );
+        setScannerAdapter(null);
+        process.env.CLOUDTRIK_HUB_SCANNER_BIN = stub;
+        const report = await scanPluginPackage('/tmp/env-target');
+        expect(report.ok).toBe(true);
+        expect(report.target).toBe('/tmp/env-target');
+      } finally {
+        delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+        await cleanupTempDir(binDir);
+      }
+    },
+  );
+
+  it('the injected adapter takes precedence over the env var', async () => {
+    process.env.CLOUDTRIK_HUB_SCANNER_BIN = '/bin/echo'; // would fail closed
     setScannerAdapter({
-      scan: async () => ({
-        target: 'x',
+      scan: async (target) => ({
+        target,
         findings: [],
         criticalCount: 0,
         ok: true,

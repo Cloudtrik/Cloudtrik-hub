@@ -1,10 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildProgram } from '../../src/cli.js';
 import { getTestMockAgent, makeTempDir, cleanupTempDir } from '../setup.js';
-import { setScannerAdapter } from '../../src/scanner/shim.js';
+import { setScannerAdapter, type ScanReport } from '../../src/scanner/shim.js';
 import { packDirectory } from '../../src/util/tar.js';
 import { mkdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+
+/** A scanner that actually ran and found nothing. */
+const passingScanner = {
+  scan: async (target: string): Promise<ScanReport> => ({
+    target,
+    findings: [],
+    criticalCount: 0,
+    ok: true,
+    durationMs: 1,
+    toolErrors: [],
+  }),
+};
 
 describe('commands/install', () => {
   let tempDir: string;
@@ -15,6 +27,10 @@ describe('commands/install', () => {
     tempDir = await makeTempDir('install-cfg-');
     workdir = await makeTempDir('install-workdir-');
     process.env.CLOUDTRIK_HUB_CONFIG_PATH = join(tempDir, 'config.json');
+    // Since 0.1.1 the scanner gate fails closed, so a happy-path install must
+    // configure a scanner explicitly. Tests that relied on the old no-op-PASS
+    // default were, in effect, asserting the fail-open behaviour.
+    setScannerAdapter(passingScanner);
   });
 
   afterEach(async () => {
@@ -61,6 +77,42 @@ describe('commands/install', () => {
     expect(installStat.isDirectory()).toBe(true);
     const lockStat = await stat(lockPath);
     expect(lockStat.isFile()).toBe(true);
+  });
+
+  it('REFUSES to install when no scanner can be resolved (fail closed)', async () => {
+    const tarball = await buildSampleTarball();
+    const agent = getTestMockAgent();
+    const pool = agent.get(REGISTRY);
+    pool
+      .intercept({ path: '/api/v1/skills/unscanned/file', method: 'GET' })
+      .reply(200, Buffer.from(tarball));
+    setScannerAdapter(null);
+    delete process.env.CLOUDTRIK_HUB_SCANNER_BIN;
+    const emptyPathDir = await makeTempDir('install-empty-path-');
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = emptyPathDir;
+      const program = buildProgram();
+      program.exitOverride();
+      await expect(
+        program.parseAsync([
+          'node',
+          'cli',
+          '--registry',
+          REGISTRY,
+          '--workdir',
+          workdir,
+          'install',
+          'unscanned',
+        ]),
+      ).rejects.toThrow(/REJECTED|NOT scanned/);
+      // …and nothing was written to the install directory.
+      await expect(stat(join(workdir, 'skills', 'unscanned'))).rejects.toThrow();
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await cleanupTempDir(emptyPathDir);
+    }
   });
 
   it('rejects install when scanner adapter returns ok=false', async () => {

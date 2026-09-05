@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildProgram } from '../../src/cli.js';
 import { getTestMockAgent, makeTempDir, cleanupTempDir } from '../setup.js';
 import { packDirectory } from '../../src/util/tar.js';
-import { mkdir, writeFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { SCANNER_COMMAND } from '../../src/scanner/shim.js';
+import { mkdir, writeFile, stat, chmod } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 
 /**
  * Integration round-trip: search → install → list → whoami via MockAgent.
@@ -17,16 +18,36 @@ import { join } from 'node:path';
 describe('integration/e2e round-trip', () => {
   let tempDir: string;
   let workdir: string;
+  let scannerDir: string;
+  let originalPath: string | undefined;
   const REGISTRY = 'https://registry.test';
 
   beforeEach(async () => {
     tempDir = await makeTempDir('e2e-cfg-');
     workdir = await makeTempDir('e2e-workdir-');
     process.env.CLOUDTRIK_HUB_CONFIG_PATH = join(tempDir, 'config.json');
+
+    // Since 0.1.1 the install gate fails closed. Rather than injecting an
+    // in-process adapter, this round-trip wires the scanner the way a real
+    // environment does — an executable named `cloudtrik-skill-scan` on PATH —
+    // so the discovery layer is exercised end-to-end and not merely mocked.
+    scannerDir = await makeTempDir('e2e-scanner-');
+    const stub = join(scannerDir, SCANNER_COMMAND);
+    await writeFile(
+      stub,
+      `#!${process.execPath}\nconsole.log('{"findings":[],"criticalCount":0,"ok":true,"toolErrors":[]}');\n`,
+      'utf8',
+    );
+    await chmod(stub, 0o755);
+    originalPath = process.env.PATH;
+    process.env.PATH = `${scannerDir}${delimiter}${originalPath ?? ''}`;
   });
 
   afterEach(async () => {
     delete process.env.CLOUDTRIK_HUB_CONFIG_PATH;
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await cleanupTempDir(scannerDir);
     await cleanupTempDir(tempDir);
     await cleanupTempDir(workdir);
   });
