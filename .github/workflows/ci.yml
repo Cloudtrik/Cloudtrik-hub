@@ -17,8 +17,11 @@ jobs:
         with: { fetch-depth: 0 }   # gitleaks needs full history
       - uses: pnpm/action-setup@v4
         with: { version: '9' }
+      # Kept in step with the release workflow's pin, so CI rehearses the
+      # toolchain the release lane will actually build and publish on. Note
+      # this job has no `registry-url`, so no auth .npmrc is written here.
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
+        with: { node-version: '24', cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint

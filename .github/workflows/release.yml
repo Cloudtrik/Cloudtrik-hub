@@ -4,7 +4,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  id-token: write    # OIDC for npm provenance
+  id-token: write    # OIDC for npm Trusted Publisher + provenance
   contents: write    # for GitHub release
 
 jobs:
@@ -15,9 +15,13 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@v4
         with: { version: '9' }
+      # Node 24 is the current LTS line. It is pinned to the MAJOR, not to a
+      # patch: setup-node resolves '24' to the newest 24.x, which can only move
+      # forward, and every node ships a bundled npm that is compatible with it.
+      # Node 20 was previously pinned here and is now deprecated on the runners.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
@@ -32,13 +36,53 @@ jobs:
           if [ "$PKG_VER" != "$TAG_VER" ]; then
             echo "Mismatch: package=$PKG_VER tag=$TAG_VER"; exit 1
           fi
-      - name: Upgrade npm to ≥11.5.1 (Trusted Publisher OIDC support)
-        run: npm install -g npm@latest
+      # The npm bundled with node is used as-is. This step previously ran
+      # `npm install -g npm@latest`, which is a moving target: it broke this
+      # workflow when npm's major moved to 12 and dropped node 20 support
+      # (EBADENGINE), failing the release AFTER every other check had passed.
+      # The requirement is not "the newest npm" — it is "an npm new enough to
+      # perform the OIDC token exchange" — so that requirement is now ASSERTED
+      # rather than pursued. If a future node ever bundled an older npm, this
+      # fails loudly here instead of publishing without OIDC.
+      - name: Assert npm supports Trusted Publisher OIDC (>= 11.5.1)
+        run: |
+          NPM_VER="$(npm --version)"
+          echo "node $(node --version) / npm ${NPM_VER}"
+          node -e '
+            const need = "11.5.1";
+            const got = String(process.argv[1]).split("-")[0];
+            const [a, b] = [got, need].map((v) => v.split(".").map(Number));
+            const cmp = (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
+            if (cmp < 0) {
+              console.error(`::error::npm ${got} is below the ${need} floor required for npm Trusted Publisher OIDC token exchange. Raise the node-version pin to a line whose bundled npm meets the floor.`);
+              process.exit(1);
+            }
+            console.log(`npm ${got} satisfies the >= ${need} OIDC floor`);
+          ' "$NPM_VER"
+      # npm's OIDC exchange (lib/utils/oidc.js) returns silently when the
+      # id-token request variables are absent, and publish then falls through to
+      # whatever other credential is configured. Assert the precondition so a
+      # missing `id-token: write` fails here, named, instead of surfacing later
+      # as an opaque authentication error.
+      - name: Assert OIDC id-token request is available
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::ACTIONS_ID_TOKEN_REQUEST_URL is unset - the job lacks 'id-token: write', so the npm OIDC token exchange would be skipped."
+            exit 1
+          fi
+          echo "id-token request endpoint present"
       - name: Publish to npm via OIDC Trusted Publisher
-        # No NODE_AUTH_TOKEN — npm CLI uses OIDC token exchange when:
-        # (a) id-token: write permission is granted (above)
-        # (b) Trusted Publisher is configured server-side on the package
-        # (c) no _authToken in ~/.npmrc (we intentionally do not set NPM_TOKEN env)
+        # Auth comes from the OIDC token exchange, not from a stored token: this
+        # workflow sets no NPM_TOKEN and no `node-auth-token` input.
+        #
+        # NOTE: `setup-node` with `registry-url` DOES write a userconfig .npmrc
+        # containing `_authToken=${NODE_AUTH_TOKEN}` and export NODE_AUTH_TOKEN
+        # as the literal placeholder `XXXXX-...`. That does NOT prevent the
+        # exchange: npm calls oidc() unconditionally from `lib/commands/
+        # publish.js` before reading credentials, and on success it overwrites
+        # the user-level `_authToken` with the exchanged one. Verified against
+        # the npm source, and demonstrated by v0.1.0, which published from this
+        # same workflow with no token present.
         run: npm publish --provenance --access public
       - uses: softprops/action-gh-release@v2
         with:
